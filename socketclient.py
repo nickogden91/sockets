@@ -7,12 +7,13 @@ Created on Sun Feb 12 01:21:57 2017
 """
 
 import socket
+import sys
 
 s = socket.socket()
-host = '50.131.6.174'
-port = 2424
-s.connect((host, port))
-print s.recv(1024)
-inpt = raw_input('type anything and click enter... ')
-s.send(inpt)
-print "the message has been sent"
+s.connect(("localhost",2424))
+f = open ("test.jpg", "rb")
+l = f.read(1024)
+while (l):
+    s.send(l)
+    l = f.read(8096)
+s.close()
