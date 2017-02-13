@@ -6,7 +6,21 @@ Created on Sun Feb 12 01:21:26 2017
 @author: nick
 """
 
-import socket, sys
+BLOCK_SIZE = 8096
+COMMAND_SIZE = 64
+
+
+import socket, sys, os, time
+
+def command_str(command, fn, size):
+    command_string = command + ' ' + fn + ' ' + str(size) + ' '
+    command_string += '0' * (COMMAND_SIZE - len(command_string)) # fill remainder of command string with 0s
+    return command_string
+    
+def parse_command_str(command_str):
+    command, fn, size, pad = command_str.split(' ')
+    return command, fn, int(size)
+    
 
 class SocketTest:
     
@@ -18,26 +32,52 @@ class SocketTestClient:
     def __init__(self):
         self.s = socket.socket()
         self.s.connect(("localhost",2424))
+    
+        self.send_file('test.jpg')
+        time.sleep(2)
         self.get_file('test.jpg')
+        time.sleep(2)
+        self.close()
+        
+        self.s = socket.socket()
+        self.s.connect(("localhost",2424))
+        self.send_file('test.jpg')
+        time.sleep(2)
+        self.get_file('test.jpg')
+        time.sleep(10)
+        self.close()
         
     def send_file(self, fn):
-        self.s.send("SEND FILE")
+        size = os.path.getsize(fn) # TODO: write this so that if file changes it doesnt cause problems
+        command_string = command_str("SENDFILE", fn, size)
+        print command_string
+        self.s.send(command_string)
         f = open(fn, "rb")
-        l = f.read(1024)
-        while l:
+        remaining = size
+        while remaining > 0:
+            l = f.read(BLOCK_SIZE)
+            remaining -= BLOCK_SIZE
             self.s.send(l)
-            l = f.read(8096)
         f.close()
-        self.s.close()
         
     def get_file(self, fn):
-        self.s.send("GET FILE")
+        command_string = command_str("GETFILE", fn, 0)
+        print command_string
+        self.s.send(command_string)
+        ack = self.s.recv(COMMAND_SIZE)
+        print 'ack:' + ack
+        command, fn, size = parse_command_str(ack)
         f = open(fn, "wb")
-        l = self.s.recv(8096)
-        while l:
+        remaining = size
+        while remaining > BLOCK_SIZE:
+            l = self.s.recv(BLOCK_SIZE)
             f.write(l)
-            l = self.s.recv(8096)
+            remaining -= BLOCK_SIZE
+        l = self.s.recv(remaining)
+        f.write(l)
         f.close()
+        
+    def close(self):
         self.s.close()
     
 class SocketTestServer:
@@ -46,40 +86,58 @@ class SocketTestServer:
         self.s = socket.socket()
         self.s.bind(("localhost",2424))
         self.s.listen(5)
-        self.wait()
+        self.connect()
+        self.wait_command()
         
-    def wait(self):
+    def connect(self):
+        self.sc, self.address = self.s.accept()
+        
+    def wait_command(self):
         while True:
-            self.sc, self.address = self.s.accept()
-            command = self.sc.recv(8096)
-            print command
-            if command == 'SEND FILE':
-                self.receive_file('images/test.jpg')
-            elif command == 'GET FILE':
-                self.send_file('images/test.jpg')
+            command_string = self.sc.recv(COMMAND_SIZE)
+            if len(command_string) == 0: # must have been disconnected
+                self.connect()
+                continue
+            print command_string
+            command, fn, size = parse_command_str(command_string)
+            if command == 'SENDFILE':
+                self.receive_file(fn, size)
+            elif command == 'GETFILE':
+                self.send_file(fn)
             else:
                 print 'Unrecognized Command'
-        self.s.close()
         
-    def receive_file(self, fn):
-        f = open(fn,'wb')
-        while (True):       
-            l = self.sc.recv(8096)
-            while (l):
-                    f.write(l)
-                    l = self.sc.recv(8096)
+    def receive_file(self, fn, size):
+        print 'receiving file'
+        f = open('images/' + fn, 'wb')
+        remaining = size
+        while remaining > BLOCK_SIZE:       
+            l = self.sc.recv(BLOCK_SIZE)
+            f.write(l)
+            remaining -= BLOCK_SIZE
+        l = self.sc.recv(remaining)
+        f.write(l)
         f.close()
-        self.sc.close()
+        #self.sc.close()
+        print 'done'
         
     def send_file(self, fn):
-        f = open(fn,'rb')
-        while (True):    
-            l = f.read(8096)
-            while (l):
-                self.sc.send(l)
-                l = f.read(8096)
+        print 'sending file'
+        size = os.path.getsize('images/' + fn) # TODO: write this so that if file changes it doesnt cause problems
+        self.sc.send(command_str("GETFILE", fn, size))
+        f = open('images/' + fn, 'rb')
+        remaining = size
+        while remaining > 0:
+            l = f.read(BLOCK_SIZE)
+            self.sc.send(l)
+            remaining -= BLOCK_SIZE
         f.close()
-        self.sc.close()
+        #self.sc.close()
+        print 'done'
+        
+    def close(self):
+        #self.sc.close()
+        self.s.close()
         
     
 if __name__ == '__main__':
