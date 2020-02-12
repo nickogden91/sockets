@@ -21,37 +21,19 @@ def parse_command_str(command_str):
     command, fn, size, pad = command_str.split(' ')
     return command, fn, int(size)
     
-
-class SocketTest:
     
-    def __init__(self):
-       pass
 
-class SocketTestClient:
-
-    def __init__(self):
-        self.s = socket.socket()
-        self.s.connect(("localhost",2424))
-    
-        self.send_file('test.jpg')
-        time.sleep(2)
-        self.get_file('test.jpg')
-        time.sleep(2)
-        self.close()
         
+
+class ImageHostClient:
+
+    def __init__(self):
         self.s = socket.socket()
         self.s.connect(("localhost",2424))
-        self.send_file('test.jpg')
-        time.sleep(2)
-        self.get_file('test.jpg')
-        time.sleep(10)
-        self.close()
         
     def send_file(self, fn):
         size = os.path.getsize(fn) # TODO: write this so that if file changes it doesnt cause problems
-        command_string = command_str("SENDFILE", fn, size)
-        print command_string
-        self.s.send(command_string)
+        self.s.send(command_str("SENDFILE", fn, size))
         f = open(fn, "rb")
         remaining = size
         while remaining > 0:
@@ -61,11 +43,8 @@ class SocketTestClient:
         f.close()
         
     def get_file(self, fn):
-        command_string = command_str("GETFILE", fn, 0)
-        print command_string
-        self.s.send(command_string)
+        self.s.send(command_str("GETFILE", fn, 0))
         ack = self.s.recv(COMMAND_SIZE)
-        print 'ack:' + ack
         command, fn, size = parse_command_str(ack)
         f = open(fn, "wb")
         remaining = size
@@ -80,7 +59,7 @@ class SocketTestClient:
     def close(self):
         self.s.close()
     
-class SocketTestServer:
+class ImageHostServer:
     
     def __init__(self):
         self.s = socket.socket()
@@ -98,7 +77,7 @@ class SocketTestServer:
             if len(command_string) == 0: # must have been disconnected
                 self.connect()
                 continue
-            print command_string
+            # not disconnected, so execute command
             command, fn, size = parse_command_str(command_string)
             if command == 'SENDFILE':
                 self.receive_file(fn, size)
@@ -146,9 +125,9 @@ if __name__ == '__main__':
         
     args = sys.argv[1:]
     if args[0] == '-s':
-        SocketTestServer()
+        ImageHostServer()
     elif args[0] == '-c':
-        SocketTestClient()
+        ImageHostClient()
 
 
 
